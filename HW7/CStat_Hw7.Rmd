@@ -1,0 +1,333 @@
+---
+title: "Computational Statistics HW7"
+author: "吴嘉骜 21307130203"
+date: "2023-11-23"
+output:
+  html_document:
+    self_contained: yes
+    toc: yes
+    toc_depth: 2
+    toc_float:
+      collapsed: no
+      smooth_scroll: no
+      number_sections: yes
+  pdf_document:
+    toc: yes
+    toc_depth: '2'
+---
+
+```{=html}
+<style type="text/css">
+h1.title{
+  font-size: 38px;
+  color: DarkRed;
+  text-align: center;
+}
+h4.author{
+  font-size: 18px;
+  color: DarkRed;
+  text-align: center;
+}
+h4.date {
+  font-size: 18px;
+  font-family: "Times New Roman", Times, serif;
+  color: DarkBlue;
+  text-align: center;
+}
+
+</style>
+```
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(warning = FALSE, cache = TRUE, message = TRUE, fig.align = "center")
+```
+## ex 7.3
+Obtain a bootstrap t confidence interval estimate for the correlation statistic in Example 7.2 ($\texttt{law}$ data in $\texttt{bootstrap}$).
+
+Solution.
+```{r}
+library(bootstrap)
+# Compute the Bootstrap standard error
+seboot <- function(data, B){
+  n <- nrow(data)
+  thetaboot <- numeric(B)
+  for(b in 1:B){
+    i <- sample(1:n, size = n, replace = TRUE)
+    x <- data[i,1]
+    y <- data[i,2]
+    thetaboot[b] <- cor(x,y)
+  }
+  return(sd(thetaboot))
+}
+
+n <- nrow(law)
+thhat <- cor(law$LSAT,law$GPA)
+
+B <- 200
+R <- 100
+thhat.b <- numeric(B)
+se.thhat.b <- numeric(B)
+for(b in 1:B){
+  j <- sample(1:n, size = n, replace = TRUE)
+  x <- law$LSAT[j]
+  y <- law$GPA[j]
+  thhat.b[b] <- cor(x,y)
+  se.thhat.b[b] <- seboot(cbind(x,y), R)
+} 
+se.thhat <- sd(thhat.b)
+t_stat <- (thhat.b - thhat)/se.thhat.b
+alpha <- 0.05
+qt <- quantile(t_stat, c(alpha/2, 1-alpha/2), type=1)
+names(qt) <- rev(names(qt))  # reverse the order of the names
+ci <- rev(thhat - qt*se.thhat)
+ci
+```
+
+## ex 7.10
+In Example 7.18, leave-one-out ($n$-fold) cross validation was used to select the best fitting model. Repeat the analysis replacing the Log-Log model with a cubic polynomial model. Which of the four models is selected by the cross validation procedure? Which model is selected according to maximum adjusted $R^2$?
+
+Solution.
+```{r, warning=FALSE, message=FALSE}
+library(DAAG, warn.conflict = FALSE); attach(ironslag)
+a <- seq(10, 40, .1) #sequence for plotting fits
+
+# n-fold cross validation
+n <- nrow(ironslag)
+e1 <- e2 <- e3 <- e4 <- numeric(n)
+
+for(k in 1:n){
+  y <- magnetic[-k]
+  x <- chemical[-k]
+  
+  J1 <- lm(y ~ x)
+  J2 <- lm(y ~ x + I(x^2))
+  J3 <- lm(log(y) ~ x)
+  J4 <- lm(y ~ x + I(x^2) + I(x^3))
+  
+  x0 <- data.frame(x=chemical[k])
+  e1[k] <- magnetic[k] - predict(J1, x0)
+  e2[k] <- magnetic[k] - predict(J2, x0)
+  e3[k] <- magnetic[k] - exp(predict(J3, x0))
+  e4[k] <- magnetic[k] - predict(J4, x0)
+}
+print(list(Linear = mean(e1^2), Quadratic = mean(e2^2), Exponential = mean(e3^2), Cubic = mean(e4^2)))
+
+# model selection by R_a^2
+y <- magnetic
+x <- chemical
+par(mfrow=c(2,2))
+
+L1 <- lm(y ~ x)
+plot(x, y, main = "Linear", pch=16)
+lines(a, predict(L1, data.frame(x=a)), col="red", lwd=2)
+
+L2 <- lm(y ~ x + I(x^2))
+plot(x, y, main = "Quadratic", pch=16)
+lines(a, predict(L2, data.frame(x=a)), col="red", lwd=2)
+
+L3 <- lm(log(y) ~ x)
+plot(x, y, main = "Exponential", pch=16)
+lines(a, exp(predict(L3, data.frame(x=a))), col="red", lwd=2)
+
+L4 <- lm(y ~ x + I(x^2) + I(x^3))
+plot(x, y, main = "Cubic", pch=16)
+lines(a, predict(L4, data.frame(x=a)), col="red", lwd=2)
+
+par(mfrow = c(1, 1))
+
+Ra <- matrix(0, nrow = 1, ncol = 4)
+Ra[1] <- summary(L1)$adj.r.squared
+Ra[2] <- summary(L2)$adj.r.squared
+Ra[3] <- summary(L3)$adj.r.squared
+Ra[4] <- summary(L4)$adj.r.squared
+rownames(Ra) <- "R_a^2"
+colnames(Ra) <- c("Linear", "Quadratic", "Exponential", "Cubic")
+Ra
+```
+
+From the cross validation procedure, the quadratic model has the smallest prediction error, and is thus selected. 
+
+According to maximum adjusted $R^2$, the quadratic model is also selected.
+
+## ex 7.11
+In Example 7.18, leave-one-out ($n$-fold) cross validation was used to select the best fitting model. Use leave-two-out cross validation to compare the models.
+
+Solution.
+```{r, warning=FALSE, message=FALSE}
+library(DAAG, warn.conflict = FALSE)
+attach(ironslag)
+
+# n-fold cross validation
+n <- nrow(ironslag)
+N <- choose(n, 2)
+e1 <- e2 <- e3 <- e4 <- numeric(N)
+k <- 1
+for(i in 1:(n-1)){
+  for(j in (i+1):n){
+    y <- magnetic[-c(i,j)]
+    x <- chemical[-c(i,j)]
+    
+    J1 <- lm(y ~ x)
+    J2 <- lm(y ~ x + I(x^2))
+    J3 <- lm(log(y) ~ x)
+    J4 <- lm(log(y) ~ log(x))
+    
+    x0 <- data.frame(x=chemical[c(i,j)])
+    e1[k] <- sum((magnetic[c(i,j)] - predict(J1, x0))^2)
+    e2[k] <- sum((magnetic[c(i,j)] - predict(J2, x0))^2)
+    e3[k] <- sum((magnetic[c(i,j)] - exp(predict(J3, x0)))^2)
+    e4[k] <- sum((magnetic[c(i,j)] - exp(predict(J4, x0)))^2)
+    
+    k <- k + 1
+  }
+}
+
+detach(ironslag)
+detach(package:DAAG)
+print(list(Linear = mean(e1), Quadratic = mean(e2), Exponential = mean(e3), LogLog = mean(e4)))
+```
+
+The quadratic model is again selected by leave-two-out cross validation due to its smallest prediction error.
+
+## pj 7.A
+Conduct a Monte Carlo study to estimate the coverage probabilities of the
+standard normal bootstrap confidence interval, the basic bootstrap confidence interval, and the percentile confidence interval. Sample from a normal population and check the empirical coverage rates for the sample mean. Find the proportion of times that the confidence intervals miss on the left, and the proportion of times that the confidence intervals miss on the right.
+
+Solution.
+```{r}
+library(boot)
+# Preparations
+n <- 100  # sample size
+M <- 250  # number of Monte Carlo samples
+B <- 200  # number of bootstrap samples
+mu <- 100  # true value
+sigma <- 10  # true value
+alpha <- c(0.025, 0.975)  # confidence level
+set.seed(2023)  # for reproducibility
+
+# records initialization
+cover_std <- cover_basic <- cover_perc <- numeric(M)
+miss_left_std <- miss_left_basic <- miss_left_perc <- numeric(M)
+miss_right_std <- miss_right_basic <- miss_right_perc <- numeric(M)
+
+# Monte Carlo simulation
+for(m in 1:M){
+  x <- rnorm(n, mu, sigma)
+  muh <- mean(x)
+  se <- sd(x)/sqrt(n)
+  muboot <- replicate(B, mean(sample(x, n, replace = TRUE)))
+  
+  # Standard normal bootstrap confidence interval
+  CI1 <- muh + qnorm(alpha) * sd(muboot)
+  # Basic bootstrap confidence interval
+  CI2 <- 2 * muh - quantile(muboot, rev(alpha))
+  # Percentile confidence interval
+  CI3 <- quantile(muboot, alpha)
+  
+  # Coverage rates  
+  cover_std[m] <- (mu >= CI1[1] & mu <= CI1[2])
+  cover_basic[m] <- (mu >= CI2[1] & mu <= CI2[2])
+  cover_perc[m] <- (mu >= CI3[1] & mu <= CI3[2])
+  
+  # Miss rates
+  miss_left_std[m] <- (mu < CI1[1])
+  miss_left_basic[m] <- (mu < CI2[1])
+  miss_left_perc[m] <- (mu < CI3[1])
+  miss_right_std[m] <- (mu > CI1[2])
+  miss_right_basic[m] <- (mu > CI2[2])
+  miss_right_perc[m] <- (mu > CI3[2])
+}
+
+results <- data.frame(
+  Interval_Type = c("Standard Normal", "Basic", "Percentile"),
+  Coverage = c(mean(cover_std), mean(cover_basic), mean(cover_perc)),
+  Miss_Left = c(mean(miss_left_std), mean(miss_left_basic), mean(miss_left_perc)),
+  Miss_Right = c(mean(miss_right_std), mean(miss_right_basic), mean(miss_right_perc))
+)
+
+results
+```
+
+
+## pj 7.B
+Repeat Project 7.A for the sample skewness statistic. Compare the coverage rates for normal populations (skewness 0) and $\chi^2(5)$ distributions (positive skewness).
+
+Solution.
+```{r}
+library(boot)
+# Preparations
+n <- 10000  # sample size
+M <- 200  # number of Monte Carlo samples
+B <- 500  # number of bootstrap samples
+mu <- 10  # true value
+sigma <- 1  # true value
+alpha <- c(0.025, 0.975)  # confidence level
+
+# compute the sample skewness
+skew <- function(x){
+  xbar <- mean(x)
+  m3 <- mean((x - xbar)^3)
+  m2 <- mean((x - xbar)^2)
+  m3/m2^1.5
+}
+set.seed(1234)  # for reproducibility
+
+# Result initialization
+results <- matrix(0, nrow = 9, ncol = 2)
+rownames(results) <- c("Coverage_Std", "Coverage_Basic", "Coverage_Perc",
+                       "Miss_Left_Std", "Miss_Right_Std", "Miss_Left_Basic", "Miss_Right_Basic", "Miss_Left_Perc", "Miss_Right_Perc")
+colnames(results) <- c("Normal", "Chi_Squared")
+
+MC_simu <- function(dist){
+  # records initialization
+  cover_std <- cover_basic <- cover_perc <- numeric(M)
+  miss_left_std <- miss_left_basic <- miss_left_perc <- numeric(M)
+  miss_right_std <- miss_right_basic <- miss_right_perc <- numeric(M)
+  
+  # Monte Carlo simulation
+  for(m in 1:M){
+    if (dist == "Normal") {
+      x <- rnorm(n, mu, sigma)
+      sk <- 0
+    } else if (dist == "Chi_Squared") {
+      x <- rchisq(n, df = 5)
+      sk <- sqrt(8/5)
+    }
+    skh <- skew(x)
+    skboot <- replicate(B, skew(sample(x, n, replace = TRUE)))
+   
+    
+    # Standard normal bootstrap confidence interval
+    CI1 <- skh + qnorm(alpha) * sd(skboot)
+    # Basic bootstrap confidence interval
+    CI2 <- 2 * skh - quantile(skboot, rev(alpha))
+    # Percentile confidence interval
+    CI3 <- quantile(skboot, alpha)
+    
+    # Coverage rates  
+    cover_std[m] <- (sk >= CI1[1] & sk <= CI1[2])
+    cover_basic[m] <- (sk >= CI2[1] & sk <= CI2[2])
+    cover_perc[m] <- (sk >= CI3[1] & sk <= CI3[2])
+    
+    # Miss rates
+    miss_left_std[m] <- (sk < CI1[1])
+    miss_left_basic[m] <- (sk < CI2[1])
+    miss_left_perc[m] <- (sk < CI3[1])
+    miss_right_std[m] <- (sk > CI1[2])
+    miss_right_basic[m] <- (sk > CI2[2])
+    miss_right_perc[m] <- (sk > CI3[2])
+}
+
+
+  c(mean(cover_std), mean(cover_basic), mean(cover_perc),
+      mean(miss_left_std), mean(miss_right_std),
+      mean(miss_left_basic), mean(miss_right_basic),
+      mean(miss_left_perc), mean(miss_right_perc))
+}
+
+results[, "Normal"] <- MC_simu("Normal")
+results[, "Chi_Squared"] <- MC_simu("Chi_Squared")
+
+results
+```
+
+When sample size $n$ is as small as Project 7.A, the coverage rates for skewness of $\chi^2(5)$ distributions are not satisfactory. This is probably because the sample skewness formula has a large variance, and the sample size should be large enough to make the sample skewness close to the population skewness. But it needs much more computational time to achieve a better estimate.
